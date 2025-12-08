@@ -3,11 +3,7 @@ import '../codecs/string/ical.dart';
 import '../frequency.dart';
 import '../recurrence_rule.dart';
 import '../utils.dart';
-import 'abilia_iteration.dart';
-import 'date_set.dart';
-import 'frequency_interval.dart';
-import 'set_positions_list.dart';
-import 'time_set.dart';
+import 'expand_occurrences.dart';
 
 /// The actual calculation of recurring instances of [rrule].
 ///
@@ -28,91 +24,26 @@ Iterable<DateTime> getRecurrenceRuleInstances(
 
   rrule = _prepare(rrule, start);
 
-  var count = rrule.count;
+  final count = rrule.count;
   if (count != null && count == 0) return;
 
-  var currentStart = start;
-  if (rrule.actualInterval == 1 && count == null && after != null) {
-    // Shortcut for not calculating unnecessary recurrences.
-    currentStart = after;
-  }
+  final from = after == null
+      ? start
+      : includeAfter
+          ? after
+          : after.add(const Duration(microseconds: 1));
+  final to = before == null
+      ? (rrule.until ?? DateTime.utc(iCalMaxYear))
+      : includeBefore
+          ? before
+          : before.subtract(const Duration(microseconds: 1));
 
-  if (!rrule.hasBySetPositions) {
-    final from = after == null
-        ? start
-        : includeAfter
-            ? after
-            : after.add(const Duration(microseconds: 1));
-    final to = before == null
-        ? (rrule.until ?? DateTime.utc(iCalMaxYear))
-        : includeBefore
-            ? before
-            : before.subtract(const Duration(microseconds: 1));
-
-    yield* expandOccurrences(
-      rule: rrule,
-      dtStart: start,
-      from: from,
-      to: to,
-    );
-    return;
-  }
-
-  var timeSet = makeTimeSet(rrule, start.timeOfDay);
-  final until = rrule.until;
-
-  while (true) {
-    final dateSet = makeDateSet(rrule, currentStart.atStartOfDay);
-    final includedDays = dateSet.includedForRule(rrule);
-
-    Iterable<DateTime> results;
-    if (rrule.hasBySetPositions) {
-      results = buildSetPositionsList(rrule, includedDays, timeSet)
-          .where((dt) => start <= dt);
-    } else {
-      results = includedDays.expand((date) {
-        return timeSet.map((time) => date.add(time));
-      });
-    }
-
-    var yieldCount = 0;
-    for (final result in results) {
-      if (until != null && result > until) return;
-      if (before != null) {
-        if (!includeBefore && result >= before) return;
-        if (includeBefore && result > before) return;
-      }
-
-      if (result < start) continue;
-
-      var isInRange = true;
-      if (after != null) {
-        if (!includeAfter && result <= after) isInRange = false;
-        if (includeAfter && result < after) isInRange = false;
-      }
-
-      if (isInRange) {
-        yieldCount++;
-        yield result;
-      }
-
-      if (count != null) {
-        count--;
-        if (count <= 0) return;
-      }
-    }
-
-    currentStart = addFrequencyAndInterval(
-      rrule,
-      currentStart,
-      wereDatesFiltered: yieldCount != dateSet.end - dateSet.start,
-    );
-    if (currentStart.year > iCalMaxYear) return;
-
-    if (rrule.frequency > Frequency.daily) {
-      timeSet = createTimeSet(rrule, currentStart.timeOfDay);
-    }
-  }
+  yield* expandOccurrences(
+    rule: rrule,
+    dtStart: start,
+    from: from,
+    to: to,
+  );
 }
 
 RecurrenceRule _prepare(RecurrenceRule rrule, DateTime start) {

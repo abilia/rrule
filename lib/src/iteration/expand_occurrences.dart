@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 
 import '../../rrule.dart';
+import '../utils.dart';
 
 Iterable<DateTime> expandOccurrences({
   required RecurrenceRule rule,
@@ -41,45 +42,94 @@ Iterable<DateTime> expandOccurrences({
   final dateStart = _dateOnly(dtStart);
   final dateEnd = _dateOnly(limitEnd);
 
-  var day = dateStart;
+  final scanStart = rule.bySetPositions.isNotEmpty
+      ? _periodStartFor(rule.frequency, dtStart)
+      : dateStart;
+
+  var day = scanStart;
+  Object? currentPeriodKey;
+  final periodCandidates = <DateTime>[];
+
+  Iterable<DateTime> flushCurrentPeriod() sync* {
+    if (periodCandidates.isEmpty) return;
+    final selected = _applyBySetPos(periodCandidates, rule.bySetPositions);
+
+    for (final candidate in selected) {
+      if (rule.count != null && produced >= rule.count!) return;
+      if (candidate.isBefore(dtStart)) continue;
+      if (candidate.isAfter(limitEnd)) return;
+
+      if (!candidate.isBefore(from)) {
+        yield candidate;
+      }
+      produced++;
+    }
+
+    periodCandidates.clear();
+  }
+
+  final frequencyCheckStart =
+      rule.frequency == Frequency.monthly ? scanStart : dtStart;
 
   while (!day.isAfter(dateEnd)) {
     if (rule.count != null && produced >= rule.count!) break;
 
-    if (_isInFrequencyPeriod(rule.frequency, interval, dtStart, day) &&
-        _matchesDateFilters(day, rule)) {
-      final hours = (rule.byHours.isNotEmpty) ? rule.byHours : [dtStart.hour];
+    if (_isInFrequencyPeriod(
+      rule.frequency,
+      interval,
+      frequencyCheckStart,
+      day,
+    )) {
+      final key = rule.bySetPositions.isEmpty
+          ? null
+          : _periodKey(rule.frequency, dtStart, day);
 
-      final minutes =
-          (rule.byMinutes.isNotEmpty) ? rule.byMinutes : [dtStart.minute];
+      if (currentPeriodKey == null) {
+        currentPeriodKey = key;
+      } else if (key != currentPeriodKey) {
+        yield* flushCurrentPeriod();
+        if (rule.count != null && produced >= rule.count!) break;
+        currentPeriodKey = key;
+      }
 
-      final seconds =
-          (rule.bySeconds.isNotEmpty) ? rule.bySeconds : [dtStart.second];
+      if (_matchesDateFilters(day, rule)) {
+        final hours = (rule.byHours.isNotEmpty) ? rule.byHours : [dtStart.hour];
 
-      for (final h in hours) {
-        for (final m in minutes) {
-          for (final s in seconds) {
-            if (rule.count != null && produced >= rule.count!) break;
+        final minutes =
+            (rule.byMinutes.isNotEmpty) ? rule.byMinutes : [dtStart.minute];
 
-            final candidate = DateTime.utc(
-              day.year,
-              day.month,
-              day.day,
-              h,
-              m,
-              s,
-              dtStart.millisecond,
-              dtStart.microsecond,
-            );
+        final seconds =
+            (rule.bySeconds.isNotEmpty) ? rule.bySeconds : [dtStart.second];
 
-            if (candidate.isBefore(dtStart)) continue;
-            if (candidate.isAfter(limitEnd)) continue;
+        for (final h in hours) {
+          for (final m in minutes) {
+            for (final s in seconds) {
+              if (rule.count != null && produced >= rule.count!) break;
 
-            if (!_matchesYearAndWeekFilters(candidate, rule)) continue;
+              final candidate = DateTime.utc(
+                day.year,
+                day.month,
+                day.day,
+                h,
+                m,
+                s,
+                dtStart.millisecond,
+                dtStart.microsecond,
+              );
 
-            produced++;
-            if (!candidate.isBefore(from)) {
-              yield candidate;
+              if (candidate.isAfter(limitEnd)) continue;
+
+              if (!_matchesYearAndWeekFilters(candidate, rule)) continue;
+
+              if (currentPeriodKey != null) {
+                periodCandidates.add(candidate);
+              } else {
+                if (candidate.isBefore(dtStart)) continue;
+                produced++;
+                if (!candidate.isBefore(from)) {
+                  yield candidate;
+                }
+              }
             }
           }
         }
@@ -88,18 +138,90 @@ Iterable<DateTime> expandOccurrences({
 
     day = day.add(const Duration(days: 1));
   }
+
+  if (rule.count == null || produced < rule.count!) {
+    yield* flushCurrentPeriod();
+  }
+}
+
+DateTime _periodStartFor(Frequency freq, DateTime dtStart) {
+  final d = _dateOnly(dtStart);
+  switch (freq) {
+    case Frequency.daily:
+      return d;
+    case Frequency.weekly:
+      final delta = d.weekday - DateTime.monday;
+      return d.subtract(Duration(days: delta));
+    case Frequency.monthly:
+      return DateTime.utc(d.year, d.month);
+    case Frequency.yearly:
+      return DateTime.utc(d.year);
+    case Frequency.secondly:
+    case Frequency.minutely:
+    case Frequency.hourly:
+      return d;
+  }
+  throw StateError('Invalid frequency');
+}
+
+Object _periodKey(Frequency freq, DateTime dtStartUtc, DateTime day) {
+  switch (freq) {
+    case Frequency.daily:
+      return _dateOnly(day);
+    case Frequency.weekly:
+      final startDay = _dateOnly(dtStartUtc);
+      final diffDays = day.difference(startDay).inDays;
+      final weekIndex = diffDays ~/ DateTime.daysPerWeek;
+      return weekIndex;
+    case Frequency.monthly:
+      return day.year * DateTime.monthsPerYear + day.month;
+    case Frequency.yearly:
+      return day.year;
+    case Frequency.hourly:
+    case Frequency.minutely:
+    case Frequency.secondly:
+      return _dateOnly(day);
+  }
+  return _dateOnly(day);
+}
+
+List<DateTime> _applyBySetPos(
+  List<DateTime> candidates,
+  List<int> bySetPositions,
+) {
+  if (candidates.isEmpty) return const [];
+  if (bySetPositions.isEmpty) {
+    return List<DateTime>.of(candidates);
+  }
+
+  final len = candidates.length;
+  final selected = <DateTime>[];
+
+  final indices = <int>{};
+  for (final position in bySetPositions) {
+    final index = position > 0 ? position - 1 : len + position;
+    if (index >= 0 && index < len) {
+      indices.add(index);
+    }
+  }
+
+  final sortedIndex = indices.toList()..sort();
+  for (final i in sortedIndex) {
+    selected.add(candidates[i]);
+  }
+  return selected;
 }
 
 bool _isInFrequencyPeriod(
-  Frequency freq,
+  Frequency frequency,
   int interval,
-  DateTime dtStartUtc,
+  DateTime dtStart,
   DateTime day,
 ) {
-  final startDay = _dateOnly(dtStartUtc);
+  final startDay = _dateOnly(dtStart);
   if (day.isBefore(startDay)) return false;
 
-  switch (freq) {
+  switch (frequency) {
     case Frequency.daily:
       final diffDays = day.difference(startDay).inDays;
       return diffDays % interval == 0;
@@ -129,7 +251,7 @@ bool _isInFrequencyPeriod(
 bool _matchesDateFilters(DateTime day, RecurrenceRule rule) {
   final year = day.year;
   final month = day.month;
-  final dom = day.day;
+  final dayInMonth = day.day;
 
   if (rule.byMonths.isNotEmpty) {
     if (!rule.byMonths.contains(month)) return false;
@@ -149,16 +271,11 @@ bool _matchesDateFilters(DateTime day, RecurrenceRule rule) {
   }
 
   if (rule.byMonthDays.isNotEmpty) {
-    final dim = _daysInMonth(year, month);
+    final daysInMonth = _daysInMonth(year, month);
     var ok = false;
-    for (final spec in rule.byMonthDays) {
-      int targetDay;
-      if (spec > 0) {
-        targetDay = spec;
-      } else {
-        targetDay = dim + 1 + spec;
-      }
-      if (dom == targetDay) {
+    for (final monthDay in rule.byMonthDays) {
+      final targetDay = monthDay > 0 ? monthDay : daysInMonth + 1 + monthDay;
+      if (dayInMonth == targetDay) {
         ok = true;
         break;
       }
@@ -170,22 +287,16 @@ bool _matchesDateFilters(DateTime day, RecurrenceRule rule) {
 }
 
 bool _matchesYearAndWeekFilters(DateTime dt, RecurrenceRule rule) {
-  final utc = dt.toUtc();
-  final year = utc.year;
+  final year = dt.year;
 
   if (rule.byYearDays.isNotEmpty) {
-    final daysInYear = _isLeapYear(year) ? 366 : 365;
-    final doy = _dayOfYear(utc);
+    final daysInYear = dt.daysInYear;
+    final dayOfYear = dt.dayOfYear;
 
     var ok = false;
-    for (final spec in rule.byYearDays) {
-      int target;
-      if (spec > 0) {
-        target = spec;
-      } else {
-        target = daysInYear + 1 + spec;
-      }
-      if (doy == target) {
+    for (final yearDay in rule.byYearDays) {
+      final target = yearDay > 0 ? yearDay : daysInYear + 1 + yearDay;
+      if (dayOfYear == target) {
         ok = true;
         break;
       }
@@ -194,17 +305,12 @@ bool _matchesYearAndWeekFilters(DateTime dt, RecurrenceRule rule) {
   }
 
   if (rule.byWeeks.isNotEmpty) {
-    final week = _isoWeekNumber(utc);
+    final week = _isoWeekNumber(dt);
     final weeksInYear = _isoWeeksInYear(year);
 
     var ok = false;
-    for (final spec in rule.byWeeks) {
-      int target;
-      if (spec > 0) {
-        target = spec;
-      } else {
-        target = weeksInYear + 1 + spec;
-      }
+    for (final byWeek in rule.byWeeks) {
+      final target = byWeek > 0 ? byWeek : weeksInYear + 1 + byWeek;
       if (week == target) {
         ok = true;
         break;
@@ -217,20 +323,18 @@ bool _matchesYearAndWeekFilters(DateTime dt, RecurrenceRule rule) {
 }
 
 bool _matchesFullFilters(DateTime dt, RecurrenceRule rule) {
-  final utc = dt.toUtc();
-
   if (rule.bySeconds.isNotEmpty) {
-    if (!rule.bySeconds.contains(utc.second)) return false;
+    if (!rule.bySeconds.contains(dt.second)) return false;
   }
   if (rule.byMinutes.isNotEmpty) {
-    if (!rule.byMinutes.contains(utc.minute)) return false;
+    if (!rule.byMinutes.contains(dt.minute)) return false;
   }
   if (rule.byHours.isNotEmpty) {
-    if (!rule.byHours.contains(utc.hour)) return false;
+    if (!rule.byHours.contains(dt.hour)) return false;
   }
 
-  if (!_matchesDateFilters(_dateOnly(utc), rule)) return false;
-  if (!_matchesYearAndWeekFilters(utc, rule)) return false;
+  if (!_matchesDateFilters(_dateOnly(dt), rule)) return false;
+  if (!_matchesYearAndWeekFilters(dt, rule)) return false;
 
   return true;
 }
@@ -247,9 +351,9 @@ DateTime _stepFine(Frequency frequency, int interval, DateTime dt) {
     case Frequency.weekly:
     case Frequency.monthly:
     case Frequency.yearly:
-      throw StateError('Use day-scanning for daily/weekly/monthly/yearly.');
+      throw StateError('Only use this for frequencies greater than daily.');
   }
-  throw StateError('Use day-scanning for daily/weekly/monthly/yearly.');
+  throw StateError('Only use this for frequencies greater than daily.');
 }
 
 DateTime _dateOnly(DateTime dt) => DateTime.utc(dt.year, dt.month, dt.day);
