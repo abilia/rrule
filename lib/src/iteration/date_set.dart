@@ -1,9 +1,11 @@
+import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 import 'package:time/time.dart';
 
 import '../frequency.dart';
 import '../recurrence_rule.dart';
 import '../utils.dart';
+import 'date_set_filtering.dart';
 
 @immutable
 class DateSet {
@@ -48,6 +50,11 @@ class DateSet {
   final int end;
 
   final DateTime firstDayOfYear;
+
+  Iterable<DateTime> includedForRule(RecurrenceRule rule) => start
+      .until(end)
+      .map((e) => firstDayOfYear.add(e.days))
+      .whereNot((element) => isFiltered(rule, element));
 
   DateTime? operator [](int index) {
     if (!isIncluded[index]) return null;

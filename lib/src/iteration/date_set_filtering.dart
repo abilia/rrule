@@ -13,15 +13,15 @@ import 'date_set.dart';
 /// * [RecurrenceRule.byWeeks]
 /// * [RecurrenceRule.byMonths]
 bool removeFilteredDates(RecurrenceRule rrule, DateSet dateSet) {
-  var isFiltered = false;
+  var anyFiltered = false;
   for (final i in dateSet.start.until(dateSet.end)) {
     final date = dateSet.firstDayOfYear.add(i.days);
-    final isCurrentFiltered = _isFiltered(rrule, date);
+    final isCurrentFiltered = isFiltered(rrule, date);
 
     dateSet.isIncluded[i] = !isCurrentFiltered;
-    isFiltered |= isCurrentFiltered;
+    anyFiltered |= isCurrentFiltered;
   }
-  return isFiltered;
+  return anyFiltered;
 }
 
 /// Whether [date] is filtered by any of the following:
@@ -31,7 +31,7 @@ bool removeFilteredDates(RecurrenceRule rrule, DateSet dateSet) {
 /// * [RecurrenceRule.byYearDays]
 /// * [RecurrenceRule.byWeeks]
 /// * [RecurrenceRule.byMonths]
-bool _isFiltered(RecurrenceRule rrule, DateTime date) {
+bool isFiltered(RecurrenceRule rrule, DateTime date) {
   assert(date.isValidRruleDate);
 
   return _isFilteredByMonths(rrule, date) ||

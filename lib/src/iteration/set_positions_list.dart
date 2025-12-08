@@ -2,19 +2,15 @@ import 'package:time/time.dart';
 
 import '../recurrence_rule.dart';
 import '../utils.dart';
-import 'date_set.dart';
 
 Iterable<DateTime> buildSetPositionsList(
   RecurrenceRule rrule,
-  DateSet dateSet,
+  Iterable<DateTime> includedDays,
   Iterable<Duration> timeSet,
 ) sync* {
   assert(timeSet.every((it) => it.isValidRruleTimeOfDay));
 
-  final dateIndices = dateSet.start
-      .until(dateSet.end)
-      .where((it) => dateSet.isIncluded[it])
-      .toList();
+  final dateIndices = includedDays.toList();
   if (dateIndices.isEmpty) return;
 
   final timeList = timeSet.toList(growable: false);
@@ -30,7 +26,6 @@ Iterable<DateTime> buildSetPositionsList(
     }
 
     final dateIndex = dateIndices[datePosition % dateIndices.length];
-    final date = dateSet.firstDayOfYear.add(dateIndex.days);
-    yield date + timeList[timePosition];
+    yield dateIndex + timeList[timePosition];
   }
 }

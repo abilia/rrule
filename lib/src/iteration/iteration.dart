@@ -3,8 +3,8 @@ import '../codecs/string/ical.dart';
 import '../frequency.dart';
 import '../recurrence_rule.dart';
 import '../utils.dart';
+import 'abilia_iteration.dart';
 import 'date_set.dart';
-import 'date_set_filtering.dart';
 import 'frequency_interval.dart';
 import 'set_positions_list.dart';
 import 'time_set.dart';
@@ -29,6 +29,7 @@ Iterable<DateTime> getRecurrenceRuleInstances(
   rrule = _prepare(rrule, start);
 
   var count = rrule.count;
+  if (count != null && count == 0) return;
 
   var currentStart = start;
   if (rrule.actualInterval == 1 && count == null && after != null) {
@@ -36,24 +37,47 @@ Iterable<DateTime> getRecurrenceRuleInstances(
     currentStart = after;
   }
 
+  if (!rrule.hasBySetPositions) {
+    final from = after == null
+        ? start
+        : includeAfter
+            ? after
+            : after.add(const Duration(microseconds: 1));
+    final to = before == null
+        ? (rrule.until ?? DateTime.utc(iCalMaxYear))
+        : includeBefore
+            ? before
+            : before.subtract(const Duration(microseconds: 1));
+
+    yield* expandOccurrences(
+      rule: rrule,
+      dtStart: start,
+      from: from,
+      to: to,
+    );
+    return;
+  }
+
   var timeSet = makeTimeSet(rrule, start.timeOfDay);
+  final until = rrule.until;
 
   while (true) {
     final dateSet = makeDateSet(rrule, currentStart.atStartOfDay);
-    final isFiltered = removeFilteredDates(rrule, dateSet);
+    final includedDays = dateSet.includedForRule(rrule);
 
     Iterable<DateTime> results;
     if (rrule.hasBySetPositions) {
-      results = buildSetPositionsList(rrule, dateSet, timeSet)
+      results = buildSetPositionsList(rrule, includedDays, timeSet)
           .where((dt) => start <= dt);
     } else {
-      results = dateSet.includedDates.expand((date) {
+      results = includedDays.expand((date) {
         return timeSet.map((time) => date.add(time));
       });
     }
 
+    var yieldCount = 0;
     for (final result in results) {
-      if (rrule.until != null && result > rrule.until!) return;
+      if (until != null && result > until) return;
       if (before != null) {
         if (!includeBefore && result >= before) return;
         if (includeBefore && result > before) return;
@@ -67,7 +91,10 @@ Iterable<DateTime> getRecurrenceRuleInstances(
         if (includeAfter && result < after) isInRange = false;
       }
 
-      if (isInRange) yield result;
+      if (isInRange) {
+        yieldCount++;
+        yield result;
+      }
 
       if (count != null) {
         count--;
@@ -78,7 +105,7 @@ Iterable<DateTime> getRecurrenceRuleInstances(
     currentStart = addFrequencyAndInterval(
       rrule,
       currentStart,
-      wereDatesFiltered: isFiltered,
+      wereDatesFiltered: yieldCount != dateSet.end - dateSet.start,
     );
     if (currentStart.year > iCalMaxYear) return;
 
