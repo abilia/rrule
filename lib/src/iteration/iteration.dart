@@ -25,25 +25,27 @@ Iterable<DateTime> getRecurrenceRuleInstances(
   rrule = _prepare(rrule, start);
 
   final count = rrule.count;
-  if (count != null && count == 0) return;
+  if (count == 0) return;
 
-  final from = after == null
-      ? start
-      : includeAfter
-          ? after
-          : after.add(const Duration(microseconds: 1));
-  final to = before == null
-      ? (rrule.until ?? DateTime.utc(iCalMaxYear))
-      : includeBefore
-          ? before
-          : before.subtract(const Duration(microseconds: 1));
+  final until = rrule.until;
+  final newBefore = before ?? until ?? DateTime.utc(iCalMaxYear);
+  final limitEnd = until != null && until < newBefore ? until : newBefore;
 
-  yield* expandOccurrences(
+  var occurrences = expandOccurrences(
     rule: rrule,
     dtStart: start,
-    from: from,
-    to: to,
+    before: limitEnd,
+    includeBefore: includeBefore,
   );
+  if (count != null) occurrences = occurrences.take(count);
+  if (after != null) {
+    if (includeAfter) {
+      occurrences = occurrences.where((d) => d >= after);
+    } else {
+      occurrences = occurrences.where((d) => d > after);
+    }
+  }
+  yield* occurrences;
 }
 
 RecurrenceRule _prepare(RecurrenceRule rrule, DateTime start) {
