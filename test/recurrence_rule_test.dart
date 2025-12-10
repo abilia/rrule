@@ -224,8 +224,7 @@ void main() {
         00,
         00,
         00,
-        123,
-        // milliseconds
+        123, // milliseconds
         456, // microseconds
       );
       final instances = rrule.getInstances(start: start);
