@@ -322,4 +322,32 @@ void main() {
       equals([DateTime.utc(2024, 2, 25), DateTime.utc(2024, 3, 10)]),
     );
   });
+  test('#72: until is inclusive', () {
+    final rule = RecurrenceRule.fromString(
+      'RRULE:FREQ=WEEKLY;UNTIL=20220101T000000;BYDAY=SA',
+    );
+
+    final instances = rule.getAllInstances(
+      start: DateTime.utc(2021, 12, 01),
+      before: DateTime.utc(2022, 12, 01),
+    );
+
+    expect(instances, isNot(contains(DateTime.utc(2021, 12, 27))));
+    expect(instances, isNot(contains(DateTime.utc(2021, 12, 28))));
+    expect(instances, isNot(contains(DateTime.utc(2021, 12, 29))));
+    expect(instances, isNot(contains(DateTime.utc(2021, 12, 30))));
+    expect(instances, isNot(contains(DateTime.utc(2021, 12, 31))));
+    expect(
+      instances,
+      containsAll([
+        DateTime.utc(2021, 12, 04),
+        DateTime.utc(2021, 12, 11),
+        DateTime.utc(2021, 12, 18),
+        DateTime.utc(2021, 12, 25),
+        DateTime.utc(2022, 1, 1),
+      ]),
+    );
+    expect(instances, isNot(contains(DateTime.utc(2022, 1, 2))));
+    expect(instances, isNot(contains(DateTime.utc(2022, 1, 3))));
+  });
 }
