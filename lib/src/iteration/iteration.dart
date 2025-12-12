@@ -29,13 +29,14 @@ Iterable<DateTime> getRecurrenceRuleInstances(
 
   final until = rrule.until;
   final newBefore = before ?? until ?? DateTime.utc(iCalMaxYear);
-  final limitEnd = until != null && until < newBefore ? until : newBefore;
+  final useUntil = until != null && until < newBefore;
+  final limitEnd = useUntil ? until : newBefore;
 
   var occurrences = expandOccurrences(
     rule: rrule,
     dtStart: start,
     before: limitEnd,
-    includeBefore: includeBefore,
+    includeBefore: useUntil || includeBefore,
   );
   if (count != null) occurrences = occurrences.take(count);
   if (after != null) {
