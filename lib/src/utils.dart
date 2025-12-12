@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:time/time.dart';
 
 export 'utils/week.dart';
@@ -67,75 +65,15 @@ extension InternalDateTimeRrule on DateTime {
   bool operator >(DateTime other) => isAfter(other);
   bool operator >=(DateTime other) => isAfter(other) || isAtSameMomentAs(other);
 
-  Duration get timeOfDay => difference(atStartOfDay);
-
   DateTime get atStartOfDay => DateTimeRrule(this)
       .copyWith(hour: 0, minute: 0, second: 0, millisecond: 0, microsecond: 0);
   bool get isAtStartOfDay => this == atStartOfDay;
-  DateTime get atEndOfDay {
-    return DateTimeRrule(this).copyWith(
-      hour: 23,
-      minute: 59,
-      second: 59,
-      millisecond: 999,
-      microsecond: 999,
-    );
-  }
-
-  bool get isAtEndOfDay => this == atEndOfDay;
-
-  static DateTime today() {
-    final date = DateTime.now().toUtc().atStartOfDay;
-    assert(date.isValidRruleDate);
-    return date;
-  }
-
-  bool get isToday => atStartOfDay == InternalDateTimeRrule.today();
-
-  DateTime plusYearsAndMonths({int years = 0, int months = 0}) {
-    final targetYear = year + years + (month + months) ~/ 12;
-    final targetMonth = (month + months) % 12;
-    final startOfTargetMonth =
-        InternalDateTimeRrule.date(targetYear, targetMonth);
-    return DateTimeRrule(this).copyWith(
-      year: targetYear,
-      month: targetMonth,
-      // Quietly force the day of month to the nearest sane value.
-      day: math.min(day, startOfTargetMonth.daysInMonth),
-    );
-  }
-
-  DateTime plusYears(int years) => plusYearsAndMonths(years: years);
-  DateTime plusMonths(int months) => plusYearsAndMonths(months: months);
-
-  DateTime nextOrSame(int dayOfWeek) {
-    assert(dayOfWeek.isValidRruleDayOfWeek);
-
-    return add(((dayOfWeek - weekday) % DateTime.daysPerWeek).days);
-  }
 }
 
 extension NullableDateTimeRrule on DateTime? {
   bool get isValidRruleDateTime => this == null || this!.isUtc;
   bool get isValidRruleDate =>
       isValidRruleDateTime && (this == null || this!.isAtStartOfDay);
-}
-
-extension DurationRrule on Duration {
-  Duration copyWith({int? hourOfDay, int? minuteOfHour, int? secondOfMinute}) {
-    return Duration(
-      hours: hourOfDay ?? this.hourOfDay,
-      minutes: minuteOfHour ?? this.minuteOfHour,
-      seconds: secondOfMinute ?? this.secondOfMinute,
-      microseconds: microsecondOfSecond,
-    );
-  }
-
-  int get hourOfDay => inHours;
-  int get minuteOfHour => inMinutes % Duration.minutesPerHour;
-  int get secondOfMinute => inSeconds % Duration.secondsPerMinute;
-  int get microsecondOfSecond =>
-      inMicroseconds % Duration.microsecondsPerSecond;
 }
 
 extension NullableDurationRrule on Duration? {
@@ -185,8 +123,4 @@ extension IntRange on int {
 extension NullableIntRrule on int? {
   bool get isValidRruleDayOfWeek =>
       this == null || (DateTime.monday <= this! && this! <= DateTime.sunday);
-}
-
-extension IterableRrule<T> on Iterable<T> {
-  bool isEmptyOrContains(T item) => isEmpty || contains(item);
 }

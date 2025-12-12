@@ -3,11 +3,7 @@ import '../codecs/string/ical.dart';
 import '../frequency.dart';
 import '../recurrence_rule.dart';
 import '../utils.dart';
-import 'date_set.dart';
-import 'date_set_filtering.dart';
-import 'frequency_interval.dart';
-import 'set_positions_list.dart';
-import 'time_set.dart';
+import 'expand_occurrences.dart';
 
 /// The actual calculation of recurring instances of [rrule].
 ///
@@ -28,64 +24,28 @@ Iterable<DateTime> getRecurrenceRuleInstances(
 
   rrule = _prepare(rrule, start);
 
-  var count = rrule.count;
+  final count = rrule.count;
+  if (count == 0) return;
 
-  var currentStart = start;
-  if (rrule.actualInterval == 1 && count == null && after != null) {
-    // Shortcut for not calculating unnecessary recurrences.
-    currentStart = after;
-  }
+  final until = rrule.until;
+  final newBefore = before ?? until ?? DateTime.utc(iCalMaxYear);
+  final limitEnd = until != null && until < newBefore ? until : newBefore;
 
-  var timeSet = makeTimeSet(rrule, start.timeOfDay);
-
-  while (true) {
-    final dateSet = makeDateSet(rrule, currentStart.atStartOfDay);
-    final isFiltered = removeFilteredDates(rrule, dateSet);
-
-    Iterable<DateTime> results;
-    if (rrule.hasBySetPositions) {
-      results = buildSetPositionsList(rrule, dateSet, timeSet)
-          .where((dt) => start <= dt);
+  var occurrences = expandOccurrences(
+    rule: rrule,
+    dtStart: start,
+    before: limitEnd,
+    includeBefore: includeBefore,
+  );
+  if (count != null) occurrences = occurrences.take(count);
+  if (after != null) {
+    if (includeAfter) {
+      occurrences = occurrences.where((d) => d >= after);
     } else {
-      results = dateSet.includedDates.expand((date) {
-        return timeSet.map((time) => date.add(time));
-      });
-    }
-
-    for (final result in results) {
-      if (rrule.until != null && result > rrule.until!) return;
-      if (before != null) {
-        if (!includeBefore && result >= before) return;
-        if (includeBefore && result > before) return;
-      }
-
-      if (result < start) continue;
-
-      var isInRange = true;
-      if (after != null) {
-        if (!includeAfter && result <= after) isInRange = false;
-        if (includeAfter && result < after) isInRange = false;
-      }
-
-      if (isInRange) yield result;
-
-      if (count != null) {
-        count--;
-        if (count <= 0) return;
-      }
-    }
-
-    currentStart = addFrequencyAndInterval(
-      rrule,
-      currentStart,
-      wereDatesFiltered: isFiltered,
-    );
-    if (currentStart.year > iCalMaxYear) return;
-
-    if (rrule.frequency > Frequency.daily) {
-      timeSet = createTimeSet(rrule, currentStart.timeOfDay);
+      occurrences = occurrences.where((d) => d > after);
     }
   }
+  yield* occurrences;
 }
 
 RecurrenceRule _prepare(RecurrenceRule rrule, DateTime start) {
