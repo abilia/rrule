@@ -330,10 +330,10 @@ void main() {
     expect(
       rule.getInstances(start: start).take(4),
       equals([
-        DateTime.utc(2024, 1, 20),
-        DateTime.utc(2024, 2, 1),
-        DateTime.utc(2024, 2, 2),
-        DateTime.utc(2024, 2, 15),
+        DateTime.utc(2026, 1, 20),
+        DateTime.utc(2026, 2, 2),
+        DateTime.utc(2026, 2, 3),
+        DateTime.utc(2026, 2, 16),
       ]),
     );
   });
