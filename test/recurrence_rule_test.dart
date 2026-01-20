@@ -322,4 +322,19 @@ void main() {
       equals([DateTime.utc(2024, 2, 25), DateTime.utc(2024, 3, 10)]),
     );
   });
+
+  test('#73: biweekly', () {
+    final rule =
+        RecurrenceRule.fromString('RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU');
+    final start = DateTime.utc(2026, 1, 20);
+    expect(
+      rule.getInstances(start: start).take(4),
+      equals([
+        DateTime.utc(2024, 1, 20),
+        DateTime.utc(2024, 2, 1),
+        DateTime.utc(2024, 2, 2),
+        DateTime.utc(2024, 2, 15),
+      ]),
+    );
+  });
 }
