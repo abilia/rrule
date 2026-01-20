@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 import 'package:time/time.dart';
 
@@ -20,11 +22,12 @@ Iterable<DateTime> expandOccurrences({
     return;
   }
 
-  final scanStart = rule.bySetPositions.isNotEmpty
-      ? rule.frequency._periodStartFor(dtStart)
-      : dtStart._dateOnly();
-  final frequencyCheckStart =
-      rule.frequency == Frequency.monthly ? scanStart : dtStart;
+  final periodDtStart = rule.frequency._periodStartFor(
+    dtStart,
+    rule.byWeekDays,
+  );
+  final scanStart =
+      rule.bySetPositions.isNotEmpty ? periodDtStart : dtStart._dateOnly();
   final bySetPosExists = rule.bySetPositions.isNotEmpty;
   final intervalCandidates = <DateTime>[];
   int? currentBySetPosPeriodKey;
@@ -46,7 +49,7 @@ Iterable<DateTime> expandOccurrences({
       }
     }
 
-    if (!day._isInFrequencyPeriod(rrule: rule, dtStart: frequencyCheckStart)) {
+    if (!day._isInFrequencyPeriod(rrule: rule, dtStart: periodDtStart)) {
       continue;
     }
     if (!day._matchesDateFilters(rule)) continue;
@@ -148,22 +151,28 @@ extension on Frequency {
     throw StateError('Only use this for frequencies greater than daily.');
   }
 
-  DateTime _periodStartFor(DateTime dtStart) {
-    final d = dtStart._dateOnly();
+  DateTime _periodStartFor(DateTime dtStart, List<ByWeekDayEntry> weekDays) {
+    final date = dtStart._dateOnly();
     switch (this) {
       case Frequency.yearly:
-        return DateTime.utc(d.year);
+        return DateTime.utc(date.year);
       case Frequency.monthly:
-        return DateTime.utc(d.year, d.month);
+        return DateTime.utc(date.year, date.month);
       case Frequency.weekly:
-        final delta = d.weekday - DateTime.monday;
-        return d.subtract(Duration(days: delta));
+        final largestWeekDay = weekDays.fold(
+          0,
+          (d, n) => max(n.day + (n.occurrence ?? 0) % DateTime.daysPerWeek, d),
+        );
+        final delta = largestWeekDay < date.weekday
+            ? date.weekday - DateTime.daysPerWeek
+            : date.weekday - DateTime.monday;
+        return date.subtract(Duration(days: delta));
       case Frequency.daily:
       case Frequency.secondly:
       case Frequency.minutely:
       case Frequency.hourly:
     }
-    return d;
+    return date;
   }
 
   int _periodKey(DateTime dtStartUtc, DateTime day) {
@@ -219,7 +228,7 @@ extension on DateTime {
 
       case Frequency.weekly:
         final diffDays = difference(startDay).inDays;
-        final weeks = diffDays ~/ 7;
+        final weeks = diffDays ~/ DateTime.daysPerWeek;
         return weeks >= 0 && weeks % interval_ == 0;
 
       case Frequency.monthly:
